@@ -44,6 +44,9 @@ sudo pktsnare -i eth0 -p tcp -w capture.pcap
 
 # Read and dissect an existing pcap file
 pktsnare -r capture.pcap
+
+# Verbose output with per-packet timestamps
+sudo pktsnare -i eth0 -v
 ```
 
 **Options**
@@ -56,6 +59,7 @@ pktsnare -r capture.pcap
 | `-w <file>` | Write capture to a `.pcap` file |
 | `-r <file>` | Read and dissect a `.pcap` file |
 | `--hex` | Print raw hex dump for each packet |
+| `-v` | Verbose output with per-packet timestamps |
 
 ---
 
