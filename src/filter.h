@@ -38,4 +38,12 @@ int filter_match(const filter_rule_t *rule, const uint8_t *pkt, int pkt_len);
  */
 void filter_print(const filter_rule_t *rule);
 
+/*
+ * Reset all fields in a filter_rule_t to their wildcard/default values.
+ * Equivalent to zeroing the struct: proto=ANY, all IPs and ports = 0.
+ * Useful to ensure a rule is fully initialised before selectively setting
+ * individual fields.
+ */
+void filter_rule_init(filter_rule_t *rule);
+
 #endif /* FILTER_H */
