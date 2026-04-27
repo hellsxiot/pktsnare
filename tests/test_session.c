@@ -1,97 +1,88 @@
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
-#include <time.h>
 #include "../src/session.h"
 
-static session_key_t make_key(uint32_t sip, uint32_t dip,
-                               uint16_t sp, uint16_t dp, uint8_t proto) {
-    session_key_t k;
-    k.src_ip   = sip;
-    k.dst_ip   = dip;
-    k.src_port = sp;
-    k.dst_port = dp;
-    k.proto    = proto;
-    return k;
+#define SRC_IP   0xC0A80101u  /* 192.168.1.1 */
+#define DST_IP   0xC0A80102u  /* 192.168.1.2 */
+#define SRC_PORT 12345
+#define DST_PORT 80
+#define PROTO_TCP 6
+
+static void test_init(void) {
+    session_init();
+    assert(session_get_count() == 0);
+    printf("PASS test_init\n");
 }
 
-static void test_init_empty(void) {
-    session_table_t tbl;
-    session_table_init(&tbl);
-    assert(tbl.count == 0);
-    printf("[PASS] test_init_empty\n");
-}
-
-static void test_insert_and_lookup(void) {
-    session_table_t tbl;
-    session_table_init(&tbl);
-
-    session_key_t k = make_key(0x0a000001, 0x0a000002, 1234, 80, PROTO_TCP);
-    session_entry_t *e = session_insert(&tbl, &k);
+static void test_create_and_lookup(void) {
+    session_init();
+    session_entry_t *e = session_create(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
     assert(e != NULL);
-    assert(tbl.count == 1);
+    assert(e->active == 1);
+    assert(e->src_ip == SRC_IP);
+    assert(e->dst_ip == DST_IP);
+    assert(e->proto == PROTO_TCP);
+    assert(session_get_count() == 1);
 
-    session_entry_t *found = session_lookup(&tbl, &k);
+    session_entry_t *found = session_lookup(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
+    assert(found == e);
+    printf("PASS test_create_and_lookup\n");
+}
+
+static void test_reverse_lookup(void) {
+    session_init();
+    session_create(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
+    /* lookup with reversed src/dst should still find the session */
+    session_entry_t *found = session_lookup(DST_IP, SRC_IP, DST_PORT, SRC_PORT, PROTO_TCP);
     assert(found != NULL);
-    assert(found->key.src_port == 1234);
-    printf("[PASS] test_insert_and_lookup\n");
+    printf("PASS test_reverse_lookup\n");
 }
 
-static void test_lookup_missing(void) {
-    session_table_t tbl;
-    session_table_init(&tbl);
+static void test_update(void) {
+    session_init();
+    session_entry_t *e = session_create(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
+    session_update(e, 100);
+    session_update(e, 200);
+    assert(e->pkt_count == 2);
+    assert(e->byte_count == 300);
+    printf("PASS test_update\n");
+}
 
-    session_key_t k = make_key(0x01010101, 0x02020202, 9999, 53, PROTO_UDP);
-    session_entry_t *found = session_lookup(&tbl, &k);
+static void test_lookup_miss(void) {
+    session_init();
+    session_entry_t *found = session_lookup(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
     assert(found == NULL);
-    printf("[PASS] test_lookup_missing\n");
-}
-
-static void test_update_counts(void) {
-    session_table_t tbl;
-    session_table_init(&tbl);
-
-    session_key_t k = make_key(0xc0a80001, 0xc0a80002, 4321, 443, PROTO_TCP);
-    session_entry_t *e = session_insert(&tbl, &k);
-    assert(e != NULL);
-
-    session_update(e, 512, 1);
-    session_update(e, 256, 0);
-    session_update(e, 128, 1);
-
-    assert(e->pkts_fwd == 2);
-    assert(e->pkts_rev == 1);
-    assert(e->bytes_fwd == 640);
-    assert(e->bytes_rev == 256);
-    printf("[PASS] test_update_counts\n");
+    printf("PASS test_lookup_miss\n");
 }
 
 static void test_expire(void) {
-    session_table_t tbl;
-    session_table_init(&tbl);
+    session_init();
+    session_entry_t *e = session_create(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
+    /* force last_seen to the past */
+    e->last_seen -= 120;
+    session_expire(60);
+    assert(session_get_count() == 0);
+    session_entry_t *found = session_lookup(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
+    assert(found == NULL);
+    printf("PASS test_expire\n");
+}
 
-    session_key_t k1 = make_key(0x01000001, 0x01000002, 100, 200, PROTO_TCP);
-    session_key_t k2 = make_key(0x01000003, 0x01000004, 300, 400, PROTO_UDP);
-
-    session_entry_t *e1 = session_insert(&tbl, &k1);
-    session_entry_t *e2 = session_insert(&tbl, &k2);
-    assert(e1 && e2);
-
-    time_t old_time = time(NULL) - (SESSION_TIMEOUT_SEC + 10);
-    e1->last_seen = old_time;
-
-    int expired = session_expire(&tbl, time(NULL));
-    assert(expired == 1);
-    assert(tbl.count == 1);
-    printf("[PASS] test_expire\n");
+static void test_dump_no_crash(void) {
+    session_init();
+    session_create(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
+    session_dump(stdout);
+    printf("PASS test_dump_no_crash\n");
 }
 
 int main(void) {
-    test_init_empty();
-    test_insert_and_lookup();
-    test_lookup_missing();
-    test_update_counts();
+    test_init();
+    test_create_and_lookup();
+    test_reverse_lookup();
+    test_update();
+    test_lookup_miss();
     test_expire();
+    test_dump_no_crash();
     printf("All session tests passed.\n");
     return 0;
 }
