@@ -26,9 +26,25 @@ typedef struct {
 
 typedef void (*packet_handler_t)(const raw_packet_t *pkt, void *user);
 
+/*
+ * capture_open  - open a raw socket on `iface` for packet capture.
+ *                 if promiscuous != 0, the interface is put into
+ *                 promiscuous mode.  Returns 0 on success, -1 on error.
+ *
+ * capture_close - release resources and restore interface flags.
+ *
+ * capture_loop  - read packets in a loop, calling `handler` for each one.
+ *                 returns when *stop_flag becomes non-zero, or on error.
+ *                 Returns 0 on clean stop, -1 on error.
+ *
+ * capture_stats - print packet/byte counters for the given context to stdout.
+ *
+ * capture_reset_stats - zero out the packet and byte counters in `ctx`.
+ */
 int  capture_open(capture_ctx_t *ctx, const char *iface, int promiscuous);
 void capture_close(capture_ctx_t *ctx);
 int  capture_loop(capture_ctx_t *ctx, packet_handler_t handler, void *user, volatile int *stop_flag);
 void capture_stats(const capture_ctx_t *ctx);
+void capture_reset_stats(capture_ctx_t *ctx);
 
 #endif /* CAPTURE_H */
