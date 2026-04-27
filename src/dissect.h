@@ -49,7 +49,30 @@ typedef struct {
     size_t           payload_len;
 } packet_info_t;
 
+/*
+ * dissect_packet - parse raw packet bytes into a packet_info_t structure.
+ *
+ * data: pointer to the raw packet buffer (starting at Ethernet header)
+ * len:  total number of bytes in the buffer
+ * out:  caller-allocated structure that will be filled on success
+ *
+ * Returns 0 on success, -1 if the packet is malformed or too short.
+ */
 int  dissect_packet(const uint8_t *data, size_t len, packet_info_t *out);
+
+/*
+ * dissect_print - print a human-readable summary of a parsed packet to stdout.
+ *
+ * info: a packet_info_t previously filled by dissect_packet()
+ */
 void dissect_print(const packet_info_t *info);
+
+/*
+ * proto_name - return a short string label for a proto_t value.
+ *
+ * Returns a pointer to a static string (e.g. "TCP", "UDP", "UNKNOWN").
+ * Never returns NULL.
+ */
+const char *proto_name(proto_t proto);
 
 #endif /* DISSECT_H */
