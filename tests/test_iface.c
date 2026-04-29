@@ -1,79 +1,86 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include "../src/iface.h"
 
-static void test_iface_list_returns_entries(void)
-{
-    iface_list_t list;
-    memset(&list, 0, sizeof(list));
+static int tests_run = 0;
+static int tests_passed = 0;
 
-    int rc = iface_list(&list);
-    /* On any Linux system there should be at least loopback */
-    assert(rc == 0);
-    assert(list.count > 0);
-    assert(list.count <= IFACE_MAX_COUNT);
-    printf("[PASS] iface_list: found %d interface(s)\n", list.count);
+#define RUN_TEST(fn) do { tests_run++; fn(); tests_passed++; } while (0)
+
+static void test_iface_exists_loopback(void) {
+    /* loopback should always exist on linux */
+    int result = iface_exists("lo");
+    assert(result == 1);
+    printf("  [pass] iface_exists loopback\n");
 }
 
-static void test_iface_list_names_nonempty(void)
-{
-    iface_list_t list;
-    memset(&list, 0, sizeof(list));
-    assert(iface_list(&list) == 0);
+static void test_iface_exists_bogus(void) {
+    int result = iface_exists("notarealif99");
+    assert(result == 0);
+    printf("  [pass] iface_exists bogus name\n");
+}
 
-    for (int i = 0; i < list.count; i++) {
-        assert(list.entries[i].name[0] != '\0');
+static void test_iface_exists_null(void) {
+    int result = iface_exists(NULL);
+    assert(result == 0);
+    printf("  [pass] iface_exists null\n");
+}
+
+static void test_iface_exists_empty(void) {
+    int result = iface_exists("");
+    assert(result == 0);
+    printf("  [pass] iface_exists empty string\n");
+}
+
+static void test_iface_is_up_loopback(void) {
+    /* lo is typically up */
+    int result = iface_is_up("lo");
+    assert(result == 1);
+    printf("  [pass] iface_is_up loopback\n");
+}
+
+static void test_iface_is_up_bogus(void) {
+    int result = iface_is_up("notarealif99");
+    assert(result == 0);
+    printf("  [pass] iface_is_up bogus\n");
+}
+
+static void test_iface_get_mtu_loopback(void) {
+    int mtu = iface_get_mtu("lo");
+    assert(mtu > 0);
+    printf("  [pass] iface_get_mtu loopback mtu=%d\n", mtu);
+}
+
+static void test_iface_get_mtu_bogus(void) {
+    int mtu = iface_get_mtu("notarealif99");
+    assert(mtu == -1);
+    printf("  [pass] iface_get_mtu bogus returns -1\n");
+}
+
+static void test_iface_list(void) {
+    char names[32][IFNAMSIZ];
+    int count = iface_list(names, 32);
+    assert(count >= 1);
+    int found_lo = 0;
+    for (int i = 0; i < count; i++) {
+        if (strcmp(names[i], "lo") == 0) found_lo = 1;
     }
-    printf("[PASS] iface_list: all names non-empty\n");
+    assert(found_lo == 1);
+    printf("  [pass] iface_list found %d ifaces including lo\n", count);
 }
 
-static void test_iface_get_loopback(void)
-{
-    iface_info_t info;
-    memset(&info, 0, sizeof(info));
-
-    int rc = iface_get("lo", &info);
-    assert(rc == 0);
-    assert(strcmp(info.name, "lo") == 0);
-    assert(info.flags & IFACE_FLAG_LOOPBACK);
-    printf("[PASS] iface_get: loopback found, mtu=%u\n", info.mtu);
-}
-
-static void test_iface_get_nonexistent(void)
-{
-    iface_info_t info;
-    memset(&info, 0, sizeof(info));
-
-    int rc = iface_get("nonexistent99", &info);
-    assert(rc != 0);
-    printf("[PASS] iface_get: nonexistent interface returns error\n");
-}
-
-static void test_iface_is_up_loopback(void)
-{
-    int up = iface_is_up("lo");
-    assert(up == 1);
-    printf("[PASS] iface_is_up: loopback is up\n");
-}
-
-static void test_iface_is_up_nonexistent(void)
-{
-    int up = iface_is_up("ghost0");
-    assert(up == 0);
-    printf("[PASS] iface_is_up: nonexistent returns 0\n");
-}
-
-int main(void)
-{
+int main(void) {
     printf("=== test_iface ===\n");
-    test_iface_list_returns_entries();
-    test_iface_list_names_nonempty();
-    test_iface_get_loopback();
-    test_iface_get_nonexistent();
-    test_iface_is_up_loopback();
-    test_iface_is_up_nonexistent();
-    printf("All iface tests passed.\n");
-    return 0;
+    RUN_TEST(test_iface_exists_loopback);
+    RUN_TEST(test_iface_exists_bogus);
+    RUN_TEST(test_iface_exists_null);
+    RUN_TEST(test_iface_exists_empty);
+    RUN_TEST(test_iface_is_up_loopback);
+    RUN_TEST(test_iface_is_up_bogus);
+    RUN_TEST(test_iface_get_mtu_loopback);
+    RUN_TEST(test_iface_get_mtu_bogus);
+    RUN_TEST(test_iface_list);
+    printf("Results: %d/%d passed\n", tests_passed, tests_run);
+    return (tests_passed == tests_run) ? 0 : 1;
 }
