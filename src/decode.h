@@ -48,4 +48,12 @@ int decode_udp(const uint8_t *buf, size_t len, decode_result_t *out);
 /* Pretty-print a decode result to stdout */
 void decode_print(const decode_result_t *result);
 
+/* Look up a field by name within a decode result.
+ * Returns a pointer to the matching decode_field_t, or NULL if not found. */
+const decode_field_t *decode_find_field(const decode_result_t *result,
+                                        const char *name);
+
+/* Reset a decode_result_t to an empty state so it can be reused. */
+void decode_result_reset(decode_result_t *result);
+
 #endif /* DECODE_H */
