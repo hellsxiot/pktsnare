@@ -68,6 +68,19 @@ static void test_expire(void) {
     printf("PASS test_expire\n");
 }
 
+/* Ensure a session that hasn't timed out is NOT removed by session_expire */
+static void test_expire_keeps_active(void) {
+    session_init();
+    session_entry_t *e = session_create(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
+    /* last_seen is current; only age it by less than the timeout */
+    e->last_seen -= 30;
+    session_expire(60);
+    assert(session_get_count() == 1);
+    session_entry_t *found = session_lookup(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
+    assert(found != NULL);
+    printf("PASS test_expire_keeps_active\n");
+}
+
 static void test_dump_no_crash(void) {
     session_init();
     session_create(SRC_IP, DST_IP, SRC_PORT, DST_PORT, PROTO_TCP);
@@ -82,6 +95,7 @@ int main(void) {
     test_update();
     test_lookup_miss();
     test_expire();
+    test_expire_keeps_active();
     test_dump_no_crash();
     printf("All session tests passed.\n");
     return 0;
