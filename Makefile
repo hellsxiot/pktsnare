@@ -1,46 +1,41 @@
-CC      := gcc
-CFLAGS  := -Wall -Wextra -pedantic -g -Isrc
-LDFLAGS := -lpcap
+CC      = gcc
+CFLAGS  = -Wall -Wextra -Wpedantic -std=c99 -Isrc
+LDFLAGS = -lpcap
 
-SRCS    := src/capture.c src/dissect.c src/filter.c src/output.c src/stats.c src/ring.c
-OBJS    := $(SRCS:.c=.o)
+SRCS = src/capture.c src/dissect.c src/filter.c src/output.c \
+       src/stats.c src/ring.c src/session.c src/decode.c \
+       src/pcap.c src/proto.c src/iface.c src/throttle.c \
+       src/hexdump.c src/timestamp.c src/alarm.c src/ratelimit.c \
+       src/ratelimit_log.c src/flowtrack.c
 
-BIN     := pktsnare
+OBJS = $(SRCS:.c=.o)
 
-.PHONY: all clean test
+TARGET = pktsnare
 
-all: $(BIN)
+TESTS = tests/test_capture tests/test_dissect tests/test_filter \
+        tests/test_output tests/test_stats tests/test_ring \
+        tests/test_session tests/test_decode tests/test_pcap \
+        tests/test_proto tests/test_iface tests/test_throttle \
+        tests/test_alarm tests/test_ratelimit tests/test_flowtrack
 
-$(BIN): $(OBJS) src/main.o
+.PHONY: all clean tests
+
+all: $(TARGET)
+
+$(TARGET): $(OBJS) src/main.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# ---- tests ----
-TEST_BINS := tests/test_capture tests/test_dissect tests/test_filter \
-             tests/test_output tests/test_stats tests/test_ring
-
-tests/test_capture: tests/test_capture.c src/capture.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-tests/test_dissect: tests/test_dissect.c src/dissect.o
+tests/test_flowtrack: tests/test_flowtrack.c src/flowtrack.o
 	$(CC) $(CFLAGS) -o $@ $^
 
-tests/test_filter: tests/test_filter.c src/filter.o src/dissect.o
+tests/test_%: tests/test_%.c src/%.o
 	$(CC) $(CFLAGS) -o $@ $^
 
-tests/test_output: tests/test_output.c src/output.o src/dissect.o
-	$(CC) $(CFLAGS) -o $@ $^
-
-tests/test_stats: tests/test_stats.c src/stats.o
-	$(CC) $(CFLAGS) -o $@ $^
-
-tests/test_ring: tests/test_ring.c src/ring.o
-	$(CC) $(CFLAGS) -o $@ $^
-
-test: $(TEST_BINS)
-	@for t in $(TEST_BINS); do echo "--- $$t ---"; ./$$t; done
+tests: $(TESTS)
+	@for t in $(TESTS); do echo "--- $$t ---"; ./$$t; done
 
 clean:
-	$(RM) $(OBJS) src/main.o $(BIN) $(TEST_BINS)
+	$(RM) $(OBJS) src/main.o $(TARGET) $(TESTS)
