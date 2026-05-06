@@ -24,8 +24,10 @@ int ifstats_read(const char *iface, ifstats_t *out) {
 
     char line[256];
     /* skip first two header lines */
-    fgets(line, sizeof(line), fp);
-    fgets(line, sizeof(line), fp);
+    if (!fgets(line, sizeof(line), fp) || !fgets(line, sizeof(line), fp)) {
+        fclose(fp);
+        return -1;
+    }
 
     int found = 0;
     while (fgets(line, sizeof(line), fp)) {
@@ -73,4 +75,11 @@ void ifstats_delta(const ifstats_t *before, const ifstats_t *after, ifstats_t *d
     delta->tx_packets  = after->tx_packets  - before->tx_packets;
     delta->tx_errors   = after->tx_errors   - before->tx_errors;
     delta->tx_dropped  = after->tx_dropped  - before->tx_dropped;
+}
+
+/* Returns total error+drop count across RX and TX, useful for quick health checks. */
+unsigned long long ifstats_total_errors(const ifstats_t *s) {
+    if (!s)
+        return 0;
+    return s->rx_errors + s->rx_dropped + s->tx_errors + s->tx_dropped;
 }
