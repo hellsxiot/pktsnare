@@ -62,12 +62,34 @@ static void test_set_get(void)
     RUN("set null",          snaplen_set(NULL, 128) == -1);
 }
 
+static void test_reset(void)
+{
+    snaplen_ctx_t ctx;
+    snaplen_init(&ctx, 128);
+
+    /* generate some stats by clamping a few packets */
+    snaplen_clamp(&ctx, 64);
+    snaplen_clamp(&ctx, 512);
+    snaplen_clamp(&ctx, 512);
+
+    RUN("pre-reset total",      ctx.total     == 3);
+    RUN("pre-reset truncated",  ctx.truncated == 2);
+
+    snaplen_reset_stats(&ctx);
+
+    RUN("post-reset total",     ctx.total     == 0);
+    RUN("post-reset truncated", ctx.truncated == 0);
+    /* snaplen value itself should be preserved after reset */
+    RUN("snaplen preserved",    snaplen_get(&ctx) == 128);
+}
+
 int main(void)
 {
     printf("=== test_snaplen ===\n");
     test_init();
     test_clamp();
     test_set_get();
+    test_reset();
     printf("Results: %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }
