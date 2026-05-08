@@ -37,4 +37,11 @@ uint32_t throttle_dropped(const throttle_t *t);
 /* Print current throttle stats to stdout */
 void throttle_print_stats(const throttle_t *t);
 
+/*
+ * Update the rate limits on an already-initialized throttle.
+ * Pass 0 for either limit to make it unlimited.
+ * Does not reset counters or the current window.
+ */
+void throttle_set_limits(throttle_t *t, uint32_t max_pps, uint32_t max_bps);
+
 #endif /* THROTTLE_H */
