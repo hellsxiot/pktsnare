@@ -1,115 +1,102 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include "../src/ipdefrag.h"
 
-/* Build a minimal fake IPv4 fragment header + payload */
-static void make_fragment(uint8_t *buf, size_t *len,
-                          uint32_t src, uint32_t dst,
-                          uint16_t id, uint8_t proto,
-                          uint16_t frag_off, int more_frags,
-                          const uint8_t *payload, size_t plen)
-{
-    memset(buf, 0, 20 + plen);
-    buf[0]  = 0x45;                        /* version=4, ihl=5 */
-    buf[9]  = proto;
-    buf[10] = (uint8_t)(src >> 24); buf[11] = (uint8_t)(src >> 16);
-    buf[12] = (uint8_t)(src >> 8);  buf[13] = (uint8_t)src;
-    buf[14] = (uint8_t)(dst >> 24); buf[15] = (uint8_t)(dst >> 16);
-    buf[16] = (uint8_t)(dst >> 8);  buf[17] = (uint8_t)dst;
-    /* id */
-    buf[4] = (uint8_t)(id >> 8); buf[5] = (uint8_t)id;
-    /* frag offset in units of 8 bytes; MF flag in bit 13 */
-    uint16_t fo = (uint16_t)((frag_off / 8) & 0x1FFF);
-    if (more_frags) fo |= 0x2000;
-    buf[6] = (uint8_t)(fo >> 8); buf[7] = (uint8_t)fo;
-    /* total length */
-    uint16_t tlen = (uint16_t)(20 + plen);
-    buf[2] = (uint8_t)(tlen >> 8); buf[3] = (uint8_t)tlen;
-    memcpy(buf + 20, payload, plen);
-    *len = 20 + plen;
+static int passed = 0;
+static int failed = 0;
+
+#define TEST(name) printf("  %-40s", name)
+#define PASS() do { puts("PASS"); passed++; } while(0)
+#define FAIL(msg) do { printf("FAIL (%s)\n", msg); failed++; } while(0)
+
+static void test_single_fragment(void) {
+    TEST("single fragment (no more bit)");
+    ipdefrag_init();
+    uint8_t payload[] = {0xde,0xad,0xbe,0xef};
+    int r = ipdefrag_add(1, 0xC0A80001, 0xC0A80002, 0, 0, payload, 4);
+    if (r == IPDEFRAG_COMPLETE) PASS(); else FAIL("expected COMPLETE");
 }
 
-static void test_create_destroy(void)
-{
-    ipdefrag_ctx_t *ctx = ipdefrag_create();
-    assert(ctx != NULL);
-    assert(ipdefrag_active(ctx) == 0);
-    ipdefrag_destroy(ctx);
-    printf("  [PASS] create/destroy\n");
+static void test_two_fragments_reassemble(void) {
+    TEST("two fragments reassemble");
+    ipdefrag_init();
+    uint8_t p1[] = {0x01,0x02,0x03,0x04};
+    uint8_t p2[] = {0x05,0x06,0x07,0x08};
+    int r1 = ipdefrag_add(2, 0x0A000001, 0x0A000002, 0,  1, p1, 4);
+    int r2 = ipdefrag_add(2, 0x0A000001, 0x0A000002, 4,  0, p2, 4);
+    if (r1 == IPDEFRAG_PENDING && r2 == IPDEFRAG_COMPLETE) PASS();
+    else FAIL("unexpected status");
 }
 
-static void test_single_unfragmented(void)
-{
-    ipdefrag_ctx_t *ctx = ipdefrag_create();
-    uint8_t pkt[64], payload[8] = {1,2,3,4,5,6,7,8};
-    size_t plen;
-    /* offset=0, MF=0 => complete datagram */
-    make_fragment(pkt, &plen, 0xC0A80001, 0xC0A80002,
-                  0x1234, 17, 0, 0, payload, 8);
-    ipdefrag_result_t out;
-    int r = ipdefrag_feed(ctx, pkt, plen, &out);
-    assert(r == 1);
-    assert(out.len == 8);
-    assert(memcmp(out.data, payload, 8) == 0);
-    free(out.data);
-    ipdefrag_destroy(ctx);
-    printf("  [PASS] single unfragmented\n");
+static void test_get_reassembled(void) {
+    TEST("get reassembled buffer");
+    ipdefrag_init();
+    uint8_t p1[] = {0xAA,0xBB};
+    uint8_t p2[] = {0xCC,0xDD};
+    ipdefrag_add(3, 1, 2, 0, 1, p1, 2);
+    ipdefrag_add(3, 1, 2, 2, 0, p2, 2);
+    uint8_t out[16];
+    uint16_t olen = 0;
+    int r = ipdefrag_get(3, 1, 2, out, &olen, sizeof(out));
+    if (r == IPDEFRAG_COMPLETE && olen == 4 &&
+        out[0]==0xAA && out[1]==0xBB && out[2]==0xCC && out[3]==0xDD)
+        PASS();
+    else FAIL("buffer mismatch");
 }
 
-static void test_two_fragments(void)
-{
-    ipdefrag_ctx_t *ctx = ipdefrag_create();
-    uint8_t pkt[64], p1[8] = {0xAA,0xBB,0xCC,0xDD,0,0,0,0};
-    uint8_t p2[4] = {0x11,0x22,0x33,0x44};
-    size_t plen;
-    ipdefrag_result_t out;
-
-    make_fragment(pkt, &plen, 0x0A000001, 0x0A000002,
-                  0xABCD, 6, 0, 1, p1, 8);
-    assert(ipdefrag_feed(ctx, pkt, plen, &out) == 0);
-    assert(ipdefrag_active(ctx) == 1);
-
-    make_fragment(pkt, &plen, 0x0A000001, 0x0A000002,
-                  0xABCD, 6, 8, 0, p2, 4);
-    int r = ipdefrag_feed(ctx, pkt, plen, &out);
-    assert(r == 1);
-    assert(out.len == 12);
-    assert(out.data[0] == 0xAA);
-    assert(out.data[8] == 0x11);
-    free(out.data);
-    assert(ipdefrag_active(ctx) == 0);
-    ipdefrag_destroy(ctx);
-    printf("  [PASS] two-fragment reassembly\n");
+static void test_missing_last_fragment(void) {
+    TEST("pending when last frag not received");
+    ipdefrag_init();
+    uint8_t p[] = {0x01,0x02};
+    int r = ipdefrag_add(4, 1, 2, 0, 1, p, 2);
+    if (r == IPDEFRAG_PENDING) PASS(); else FAIL("expected PENDING");
 }
 
-static void test_expire(void)
-{
-    ipdefrag_ctx_t *ctx = ipdefrag_create();
-    uint8_t pkt[64], payload[8] = {0};
-    size_t plen;
-    ipdefrag_result_t out;
-
-    make_fragment(pkt, &plen, 0x01010101, 0x02020202,
-                  0x0001, 17, 0, 1, payload, 8);
-    ipdefrag_feed(ctx, pkt, plen, &out);
-    assert(ipdefrag_active(ctx) == 1);
-
-    int evicted = ipdefrag_expire(ctx, (uint32_t)(IPDEFRAG_TIMEOUT_SEC + 9999));
-    assert(evicted >= 1);
-    assert(ipdefrag_active(ctx) == 0);
-    ipdefrag_destroy(ctx);
-    printf("  [PASS] expire stale flows\n");
+static void test_get_before_complete(void) {
+    TEST("get returns err when incomplete");
+    ipdefrag_init();
+    uint8_t p[] = {0xFF};
+    ipdefrag_add(5, 1, 2, 0, 1, p, 1);
+    uint8_t out[16]; uint16_t olen = 0;
+    int r = ipdefrag_get(5, 1, 2, out, &olen, sizeof(out));
+    if (r == IPDEFRAG_ERR) PASS(); else FAIL("expected ERR");
 }
 
-int main(void)
-{
-    printf("test_ipdefrag\n");
-    test_create_destroy();
-    test_single_unfragmented();
-    test_two_fragments();
-    test_expire();
-    printf("All ipdefrag tests passed.\n");
-    return 0;
+static void test_flush_clears_state(void) {
+    TEST("flush clears all entries");
+    ipdefrag_init();
+    uint8_t p[] = {0x01};
+    ipdefrag_add(6, 1, 2, 0, 1, p, 1);
+    ipdefrag_flush();
+    uint8_t out[16]; uint16_t olen = 0;
+    int r = ipdefrag_get(6, 1, 2, out, &olen, sizeof(out));
+    if (r == IPDEFRAG_ERR) PASS(); else FAIL("expected ERR after flush");
+}
+
+static void test_different_flows_isolated(void) {
+    TEST("different flow IDs are isolated");
+    ipdefrag_init();
+    uint8_t pa[] = {0x01,0x02};
+    uint8_t pb[] = {0xAA,0xBB};
+    ipdefrag_add(10, 1, 2, 0, 0, pa, 2);
+    ipdefrag_add(11, 1, 2, 0, 0, pb, 2);
+    uint8_t out[16]; uint16_t olen = 0;
+    ipdefrag_get(10, 1, 2, out, &olen, sizeof(out));
+    int r = ipdefrag_get(11, 1, 2, out, &olen, sizeof(out));
+    if (r == IPDEFRAG_COMPLETE && out[0] == 0xAA) PASS();
+    else FAIL("flow isolation broken");
+}
+
+int main(void) {
+    printf("=== test_ipdefrag ===\n");
+    test_single_fragment();
+    test_two_fragments_reassemble();
+    test_get_reassembled();
+    test_missing_last_fragment();
+    test_get_before_complete();
+    test_flush_clears_state();
+    test_different_flows_isolated();
+    printf("Results: %d passed, %d failed\n", passed, failed);
+    return failed ? 1 : 0;
 }
